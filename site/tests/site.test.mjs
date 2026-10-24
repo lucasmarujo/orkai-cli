@@ -277,6 +277,20 @@ test('os comandos de instalação são os mesmos do README', () => {
   assert.equal(installBlock('source'), readmeBlock('**From source**'));
 });
 
+test('o Windows instala pelo winget com o mesmo id do pacote nos dois READMEs, na página e no llms.txt', () => {
+  const command = 'winget install LucasMarujo.orkai';
+  assert.equal(readmeBlock('**Windows**'), command);
+  assert.ok(readmePtBr.includes(`**Windows**, pelo [winget](https://learn.microsoft.com/windows/package-manager/winget/):\n\n\`\`\`powershell\n${command}\n\`\`\``), 'README.pt-BR');
+  assert.equal(installBlock('windows'), command);
+  assert.equal(installBlock('windows-powershell'), readmeBlock('Or, without winget, in PowerShell:'));
+  assert.ok(readmePtBr.includes(`Ou, sem o winget, no PowerShell:
+
+\`\`\`powershell
+${installBlock('windows-powershell')}
+\`\`\``), 'README.pt-BR: PowerShell');
+  assert.ok(read('llms.txt').includes(`\`${command}\``), 'llms.txt');
+});
+
 test('os downloads diretos são os binários da tabela de plataformas do README', () => {
   const files = readmeTable('| Platform | File |').map(([, file]) => file);
   const links = [...html.matchAll(/href="https:\/\/github\.com\/lucasmarujo\/orkai-cli\/releases\/(?:download\/latest|latest\/download)\/([^"]+)"/g)].map((m) => m[1]);

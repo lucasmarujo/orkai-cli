@@ -493,10 +493,12 @@ chmod +x ~/.local/bin/orkai</code></pre></div>
           <p class="pane-note">Intel Mac: change the <code>target</code> to <code>orkai-x86_64-apple-darwin</code>. If <code>~/.local/bin</code> isn't on your <code>PATH</code> yet, add <code>export PATH="$HOME/.local/bin:$PATH"</code> to your <code>~/.zshrc</code>.</p>
         </div>
         <div class="pane" role="tabpanel" id="pane-windows" aria-labelledby="tab-windows" tabindex="0" hidden>
-          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows">$setup = "$env:TEMP\orkai-setup.exe"
+          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows">winget install LucasMarujo.orkai</code></pre></div>
+          <p class="pane-note">Or, without winget, in PowerShell:</p>
+          <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="windows-powershell">$setup = "$env:TEMP\orkai-setup.exe"
 Invoke-WebRequest "https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe" -OutFile $setup
 Start-Process $setup -Wait</code></pre></div>
-          <p class="pane-note">Run it in PowerShell: it installs orkai for your user, without admin rights and without a SmartScreen prompt, and offers to add it to your <code>PATH</code>. The installer isn't code signed yet, so an <code>orkai-setup.exe</code> downloaded with a browser may get the prompt: <b>More info</b> › <b>Run anyway</b>. Then open a new terminal and type <code>orkai</code> in PowerShell, Bash or zsh.</p>
+          <p class="pane-note">Both install orkai for your user, without admin rights and without a SmartScreen prompt, and put it on your <code>PATH</code>. The installer isn't code signed yet, so an <code>orkai-setup.exe</code> downloaded with a browser may get the prompt: <b>More info</b> › <b>Run anyway</b>. Then open a new terminal and type <code>orkai</code> in PowerShell, Bash or zsh.</p>
         </div>
         <div class="pane" role="tabpanel" id="pane-source" aria-labelledby="tab-source" tabindex="0" hidden>
           <div class="code"><button class="copy" type="button" data-copy>copy</button><pre><code data-install="source">git clone https://github.com/lucasmarujo/orkai-cli.git
@@ -518,7 +520,7 @@ cargo install --path .</code></pre></div>
           <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-aarch64-apple-darwin"><span>macOS Apple Silicon</span><code>orkai-aarch64-apple-darwin</code></a></li>
           <li><a href="https://github.com/lucasmarujo/orkai-cli/releases/download/latest/orkai-x86_64-apple-darwin"><span>macOS Intel</span><code>orkai-x86_64-apple-darwin</code></a></li>
         </ul>
-        <p class="side-note">On Windows, run the installer. On Linux and macOS, rename the file to <code>orkai</code> and put it in a folder on your <code>PATH</code>.</p>
+        <p class="side-note">On Windows, use winget or run the installer. On Linux and macOS, rename the file to <code>orkai</code> and put it in a folder on your <code>PATH</code>.</p>
         <h3 class="kicker-dim steps-title">getting started</h3>
         <ol class="steps">
           <li>Open orkai in any terminal: <code>orkai</code>.</li>

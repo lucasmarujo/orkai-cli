@@ -493,6 +493,7 @@ kbd + kbd { margin-left: 0.25em; }
 .copy:hover { border-color: var(--text); }
 .copy.is-done { color: var(--green); border-color: var(--green); }
 .pane-note { margin-top: 16px; font-size: 1rem; color: var(--muted); }
+.pane-note + .code { margin-top: 12px; }
 .callout { display: grid; gap: 8px; margin-top: 32px; padding: 4px 0 4px 18px; border-left: 2px solid var(--pink); }
 .callout p { color: var(--muted); font-size: 1rem; }
 .install-side { display: grid; align-content: start; gap: 14px; }

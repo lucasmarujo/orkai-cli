@@ -24,6 +24,7 @@ orkai shows every agent in one overview, grouped by project folder, with each on
 - Site: https://orkai.marujo.dev/
 - Code and documentation: https://github.com/lucasmarujo/orkai-cli
 - Latest build: https://github.com/lucasmarujo/orkai-cli/releases/tag/latest
+- Windows with winget: `winget install LucasMarujo.orkai`
 - Windows installer: https://github.com/lucasmarujo/orkai-cli/releases/latest/download/orkai-setup.exe
 - Code signing policy: https://github.com/lucasmarujo/orkai-cli#code-signing-policy
 - Author: Lucas Marujo (https://marujo.dev/)
