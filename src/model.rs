@@ -109,6 +109,20 @@ impl AgentState {
         }
     }
 
+    pub fn display_label(self, lang: crate::i18n::Language) -> &'static str {
+        match lang {
+            crate::i18n::Language::En => self.label(),
+            crate::i18n::Language::PtBr => match self {
+                AgentState::Idle => "ocioso",
+                AgentState::Working => "ativo",
+                AgentState::Paused => "pausado",
+                AgentState::Done => "pronto",
+                AgentState::Exited => "parado",
+                AgentState::Lost => "perdido",
+            },
+        }
+    }
+
     pub fn is_alive(self) -> bool {
         !matches!(self, AgentState::Exited | AgentState::Lost)
     }
@@ -203,6 +217,17 @@ impl ExitInfo {
             (Some(error), _) => format!("failed: {error}"),
             (None, Some(code)) => format!("exited with code {code}"),
             (None, None) => "exited".to_string(),
+        }
+    }
+
+    pub fn describe_lang(&self, lang: crate::i18n::Language) -> String {
+        match lang {
+            crate::i18n::Language::En => self.describe(),
+            crate::i18n::Language::PtBr => match (&self.error, self.code) {
+                (Some(error), _) => format!("falhou: {error}"),
+                (None, Some(code)) => format!("encerrou com código {code}"),
+                (None, None) => "encerrou".to_string(),
+            },
         }
     }
 }

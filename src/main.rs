@@ -19,13 +19,15 @@ use orkai::{cli, holder, hooks, pwa, tui, update};
     about = "Orchestrate many AI coding agents across many projects from one terminal"
 )]
 struct Cli {
+    #[arg(long, global = true, help = "Language: pt-br or en")]
+    lang: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    #[command(about = "List agents with their live state")]
+    #[command(about = "List agents with their live state", alias = "list")]
     Ls {
         #[arg(short, long, help = "Only agents of this session")]
         session: Option<String>,
@@ -64,7 +66,7 @@ enum Command {
     },
     #[command(about = "Stop a running agent")]
     Kill { id: AgentId },
-    #[command(about = "Remove a stopped agent and its recorded output")]
+    #[command(about = "Remove a stopped agent and its recorded output", alias = "remove")]
     Rm { id: AgentId },
     #[command(about = "Relaunch interrupted agents in their folders, resuming their conversations")]
     Recover {
@@ -107,43 +109,51 @@ fn tunnel_kind(text: &str) -> Result<TunnelKind, String> {
     TunnelKind::parse(text).ok_or_else(|| "use cloudflare or tailscale".to_string())
 }
 
-fn launcher(store: Store) -> std::io::Result<Launcher> {
+fn launcher(store: Store, language: orkai::i18n::Language) -> std::io::Result<Launcher> {
     let config = Config::load_or_init(store.home())?;
     let exe = std::env::current_exe()?;
-    Launcher::new(store, config, &exe)
+    let mut l = Launcher::new(store, config, &exe)?;
+    l.set_language(language);
+    Ok(l)
 }
 
-fn run(command: Option<Command>) -> std::io::Result<()> {
+fn run(cli: Cli) -> std::io::Result<()> {
     let home = Home::resolve()?;
-    if let Some(Command::Holder { id }) = command {
+    if let Some(Command::Holder { id }) = cli.command {
         return holder::run(&home, id);
     }
-    if let Some(Command::Hook { source, id, payload }) = command {
+    if let Some(Command::Hook { source, id, payload }) = cli.command {
         let _ = hooks::record(&home, id, &source, payload.as_deref());
         return Ok(());
     }
-    if let Some(Command::PwaBridge { tunnel, port }) = command {
+    if let Some(Command::PwaBridge { tunnel, port }) = cli.command {
         return pwa::bridge::run(&home, tunnel, port);
     }
     let store = Store::open(home)?;
-    match command {
-        None => tui::run(launcher(store)?),
+    let config = Config::load_or_init(store.home())?;
+    let language = orkai::i18n::Language::resolve(cli.lang.as_deref(), config.language.as_deref());
+    orkai::i18n::set_current_language(language);
+
+    match cli.command {
+        None => tui::run(launcher(store, language)?),
         Some(Command::Ls { session }) => cli::list(&store, session.as_deref()),
         Some(Command::Sessions) => cli::sessions(&store),
         Some(Command::New { kind, session, cwd, name, worktree, task }) => {
             let kind = AgentKind::parse(&kind).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("kind must be one of {}", AgentKind::names()),
-                )
+                let msg = if language.is_pt() {
+                    format!("o tipo deve ser um de {}", AgentKind::names())
+                } else {
+                    format!("kind must be one of {}", AgentKind::names())
+                };
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)
             })?;
-            cli::new_agent(&launcher(store)?, kind, session, cwd, name, task.join(" "), worktree)
+            cli::new_agent(&launcher(store, language)?, kind, session, cwd, name, task.join(" "), worktree)
         }
         Some(Command::Attach { id }) => cli::attach(&store, id),
         Some(Command::Send { id, no_enter, text }) => cli::send(&store, id, &text.join(" "), !no_enter),
         Some(Command::Kill { id }) => cli::kill(&store, id),
         Some(Command::Rm { id }) => cli::remove(&store, id),
-        Some(Command::Recover { session }) => cli::recover(&launcher(store)?, session.as_deref()),
+        Some(Command::Recover { session }) => cli::recover(&launcher(store, language)?, session.as_deref()),
         Some(Command::Logs { id, lines }) => cli::logs(&store, id, lines),
         Some(Command::Home) => {
             println!("{}", store.home().root().display());
@@ -156,7 +166,7 @@ fn run(command: Option<Command>) -> std::io::Result<()> {
                 (false, true) => PwaAction::NewCode,
                 (false, false) => PwaAction::Show,
             };
-            cli::pwa(&launcher(store)?, tunnel, action)
+            cli::pwa(&launcher(store, language)?, tunnel, action)
         }
         Some(Command::Holder { .. }) | Some(Command::Hook { .. }) | Some(Command::PwaBridge { .. }) => Ok(()),
     }
@@ -170,7 +180,7 @@ fn main() -> ExitCode {
             return code;
         }
     }
-    match run(cli.command) {
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("orkai: {err}");

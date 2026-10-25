@@ -894,12 +894,15 @@ pub struct Launcher {
     config: Config,
     source: PathBuf,
     exe: PathBuf,
+    language: crate::i18n::Language,
 }
 
 impl Launcher {
     pub fn new(store: Store, config: Config, source_exe: &Path) -> io::Result<Self> {
         let exe = holder_executable(store.home(), source_exe)?;
-        Ok(Self { store, config, source: source_exe.to_path_buf(), exe })
+        let language =
+            config.language.as_deref().and_then(crate::i18n::Language::parse).unwrap_or(crate::i18n::Language::En);
+        Ok(Self { store, config, source: source_exe.to_path_buf(), exe, language })
     }
 
     pub fn store(&self) -> &Store {
@@ -912,6 +915,14 @@ impl Launcher {
 
     pub fn holder_exe(&self) -> &Path {
         &self.exe
+    }
+
+    pub fn language(&self) -> crate::i18n::Language {
+        self.language
+    }
+
+    pub fn set_language(&mut self, language: crate::i18n::Language) {
+        self.language = language;
     }
 
     pub fn create(&self, draft: NewAgent, size: TermSize, isolate: bool, bypass: bool) -> io::Result<AgentRecord> {

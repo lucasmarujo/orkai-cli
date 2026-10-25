@@ -340,6 +340,7 @@ pub struct App {
     clipboard: Option<String>,
     installed: Option<Vec<AgentKind>>,
     pub pwa: PwaPanel,
+    pub language: crate::i18n::Language,
 }
 
 impl App {
@@ -364,6 +365,7 @@ impl App {
         let agents: BTreeMap<AgentId, AgentEntry> = records.into_iter().map(|r| (r.id, AgentEntry::new(r))).collect();
         let tabs = ui.tabs.iter().copied().filter(|id| agents.contains_key(id)).collect();
         launch::prune_holder_binaries(store.home(), launcher.holder_exe());
+        let language = launcher.language();
         let mut app = Self {
             launcher,
             tx,
@@ -407,9 +409,17 @@ impl App {
             clipboard: None,
             installed: None,
             pwa: PwaPanel { enabled: ui.pwa, ..PwaPanel::default() },
+            language,
         };
         app.ensure_selection();
         Ok(app)
+    }
+
+    pub fn t<'a>(&self, en: &'a str, pt: &'a str) -> &'a str {
+        match self.language {
+            crate::i18n::Language::PtBr => pt,
+            crate::i18n::Language::En => en,
+        }
     }
 
     pub fn start(&mut self) {

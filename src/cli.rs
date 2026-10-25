@@ -20,7 +20,7 @@ use crate::pwa::bridge::Phase;
 use crate::pwa::tunnel::TunnelKind;
 use crate::store::Store;
 use crate::termfmt;
-use crate::tui::format::{display_path, duration_short, pad, slugify, truncate};
+use crate::tui::format::{display_path, duration_short, pad, pad_left, slugify, truncate};
 use crate::tui::keys;
 use crate::util::now_ms;
 use crate::worktree;
@@ -49,7 +49,12 @@ impl Probe {
 }
 
 fn not_found(id: AgentId) -> io::Error {
-    io::Error::new(io::ErrorKind::NotFound, format!("agent {id} not found"))
+    let msg = if crate::i18n::current_language().is_pt() {
+        format!("agente {id} não encontrado")
+    } else {
+        format!("agent {id} not found")
+    };
+    io::Error::new(io::ErrorKind::NotFound, msg)
 }
 
 pub fn probe(store: &Store, id: AgentId) -> Probe {
@@ -79,19 +84,20 @@ pub fn list(store: &Store, session: Option<&str>) -> io::Result<()> {
     let records: Vec<AgentRecord> =
         store.list_agents()?.into_iter().filter(|r| session.is_none_or(|s| r.session == s)).collect();
     if records.is_empty() {
-        println!("no agents");
+        println!("{}", crate::i18n::t("no agents", "nenhum agente"));
         return Ok(());
     }
     let now = now_ms();
     println!(
-        "{:>4}  {}  {}  {}  {}  {:>7}  {}  ACTIVITY",
-        "ID",
-        pad("SESSION", 12),
-        pad("STATE", 8),
-        pad("KIND", 8),
-        pad("NAME", 24),
-        "UPTIME",
-        pad("WHERE", 28)
+        "{:>4}  {}  {}  {}  {}  {:>7}  {}  {}",
+        crate::i18n::t("ID", "ID"),
+        pad(crate::i18n::t("SESSION", "SESSÃO"), 12),
+        pad(crate::i18n::t("STATE", "ESTADO"), 8),
+        pad(crate::i18n::t("KIND", "TIPO"), 8),
+        pad(crate::i18n::t("NAME", "NOME"), 24),
+        pad_left(crate::i18n::t("UPTIME", "TEMPO"), 7),
+        pad(crate::i18n::t("WHERE", "ONDE"), 28),
+        crate::i18n::t("ACTIVITY", "ATIVIDADE")
     );
     for record in records {
         let probe = probe(store, record.id);
@@ -101,14 +107,18 @@ pub fn list(store: &Store, session: Option<&str>) -> io::Result<()> {
                 status.activity.clone(),
                 status.running_kind(record.kind),
             ),
-            Probe::Exited(exit) => (String::new(), exit.describe(), record.kind),
-            Probe::Lost => (String::new(), "interrupted — run `orkai recover`".to_string(), record.kind),
+            Probe::Exited(exit) => (String::new(), exit.describe_lang(crate::i18n::current_language()), record.kind),
+            Probe::Lost => (
+                String::new(),
+                crate::i18n::t("interrupted — run `orkai recover`", "interrompido — execute `orkai recover`").to_string(),
+                record.kind,
+            ),
         };
         println!(
             "{:>4}  {}  {}  {}  {}  {:>7}  {}  {}",
             record.id,
             pad(&record.session, 12),
-            pad(probe.state().label(), 8),
+            pad(probe.state().display_label(crate::i18n::current_language()), 8),
             pad(kind.label(), 8),
             pad(&record.name, 24),
             uptime,
@@ -155,9 +165,16 @@ pub fn new_agent(
         isolate,
         false,
     )?;
-    println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);
-    if let Some(worktree) = &record.worktree {
-        println!("worktree {} on branch {}", record.cwd.display(), worktree.branch);
+    if crate::i18n::current_language().is_pt() {
+        println!("iniciou {} {} (#{}) na sessão {}", record.kind.label(), record.name, record.id, record.session);
+        if let Some(worktree) = &record.worktree {
+            println!("worktree {} no branch {}", record.cwd.display(), worktree.branch);
+        }
+    } else {
+        println!("started {} {} (#{}) in session {}", record.kind.label(), record.name, record.id, record.session);
+        if let Some(worktree) = &record.worktree {
+            println!("worktree {} on branch {}", record.cwd.display(), worktree.branch);
+        }
     }
     Ok(())
 }
@@ -172,23 +189,42 @@ fn strip_verbatim(path: PathBuf) -> PathBuf {
 
 pub fn kill(store: &Store, id: AgentId) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
-    let runtime = store.read_runtime(id)?.ok_or_else(|| io::Error::other(format!("agent {id} is not running")))?;
+    let runtime = store.read_runtime(id)?.ok_or_else(|| {
+        let msg = if crate::i18n::current_language().is_pt() {
+            format!("agente {id} não está em execução")
+        } else {
+            format!("agent {id} is not running")
+        };
+        io::Error::other(msg)
+    })?;
     let (conn, _reader, _) = client::connect(&runtime)?;
     conn.send(&ClientMsg::Kill)?;
     let deadline = Instant::now() + KILL_TIMEOUT;
     while Instant::now() < deadline {
         if store.read_exit(id)?.is_some() {
-            println!("agent {id} stopped");
+            if crate::i18n::current_language().is_pt() {
+                println!("agente {id} parado");
+            } else {
+                println!("agent {id} stopped");
+            }
             return Ok(());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Err(io::Error::new(io::ErrorKind::TimedOut, "agent did not stop in time"))
+    let err_msg = crate::i18n::t("agent did not stop in time", "agente não parou a tempo");
+    Err(io::Error::new(io::ErrorKind::TimedOut, err_msg))
 }
 
 pub fn send(store: &Store, id: AgentId, text: &str, submit: bool) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
-    let runtime = store.read_runtime(id)?.ok_or_else(|| io::Error::other(format!("agent {id} is not running")))?;
+    let runtime = store.read_runtime(id)?.ok_or_else(|| {
+        let msg = if crate::i18n::current_language().is_pt() {
+            format!("agente {id} não está em execução")
+        } else {
+            format!("agent {id} is not running")
+        };
+        io::Error::other(msg)
+    })?;
     let (conn, _reader, _) = client::connect(&runtime)?;
     if !text.is_empty() {
         conn.send(&ClientMsg::Input(text.as_bytes().to_vec()))?;
@@ -204,14 +240,27 @@ pub fn send(store: &Store, id: AgentId, text: &str, submit: bool) -> io::Result<
 pub fn remove(store: &Store, id: AgentId) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
     if let Probe::Live(_) = probe(store, id) {
-        return Err(io::Error::other(format!("agent {id} is running; stop it first with `orkai kill {id}`")));
+        let msg = if crate::i18n::current_language().is_pt() {
+            format!("agente {id} está em execução; pare-o primeiro com `orkai kill {id}`")
+        } else {
+            format!("agent {id} is running; stop it first with `orkai kill {id}`")
+        };
+        return Err(io::Error::other(msg));
     }
     let worktree = store.load_agent(id)?.worktree;
     store.remove_agent(id)?;
-    println!("agent {id} removed");
-    if let Some(worktree) = worktree {
-        worktree::discard(store.home(), &worktree)?;
-        println!("worktree {} and branch {} deleted", worktree.path.display(), worktree.branch);
+    if crate::i18n::current_language().is_pt() {
+        println!("agente {id} removido");
+        if let Some(worktree) = worktree {
+            worktree::discard(store.home(), &worktree)?;
+            println!("worktree {} e branch {} excluídos", worktree.path.display(), worktree.branch);
+        }
+    } else {
+        println!("agent {id} removed");
+        if let Some(worktree) = worktree {
+            worktree::discard(store.home(), &worktree)?;
+            println!("worktree {} and branch {} deleted", worktree.path.display(), worktree.branch);
+        }
     }
     Ok(())
 }
@@ -229,19 +278,35 @@ pub fn recover(launcher: &Launcher, session: Option<&str>) -> io::Result<()> {
         match launcher.start(&mut record, LaunchMode::Resume, DEFAULT_SIZE) {
             Ok(()) => {
                 recovered += 1;
-                println!(
-                    "recovered #{} {} ({}) in {}",
-                    record.id,
-                    record.name,
-                    record.kind.label(),
-                    record.cwd.display()
-                );
+                if crate::i18n::current_language().is_pt() {
+                    println!(
+                        "recuperado #{} {} ({}) em {}",
+                        record.id,
+                        record.name,
+                        record.kind.label(),
+                        record.cwd.display()
+                    );
+                } else {
+                    println!(
+                        "recovered #{} {} ({}) in {}",
+                        record.id,
+                        record.name,
+                        record.kind.label(),
+                        record.cwd.display()
+                    );
+                }
             }
-            Err(err) => eprintln!("could not recover #{} {}: {err}", record.id, record.name),
+            Err(err) => {
+                if crate::i18n::current_language().is_pt() {
+                    eprintln!("não foi possível recuperar #{} {}: {err}", record.id, record.name);
+                } else {
+                    eprintln!("could not recover #{} {}: {err}", record.id, record.name);
+                }
+            }
         }
     }
     if recovered == 0 {
-        println!("nothing to recover");
+        println!("{}", crate::i18n::t("nothing to recover", "nada para recuperar"));
     }
     Ok(())
 }
@@ -249,7 +314,7 @@ pub fn recover(launcher: &Launcher, session: Option<&str>) -> io::Result<()> {
 pub fn logs(store: &Store, id: AgentId, lines: Option<usize>) -> io::Result<()> {
     store.load_agent(id).map_err(|_| not_found(id))?;
     let Some(mut parser) = oplog::replay(&store.home().output_log(id))? else {
-        println!("(no output recorded)");
+        println!("{}", crate::i18n::t("(no output recorded)", "(nenhuma saída gravada)"));
         return Ok(());
     };
     let transcript = termfmt::transcript(parser.screen_mut());
@@ -272,9 +337,14 @@ impl Drop for RawGuard {
 
 pub fn attach(store: &Store, id: AgentId) -> io::Result<()> {
     let record = store.load_agent(id).map_err(|_| not_found(id))?;
-    let runtime = store
-        .read_runtime(id)?
-        .ok_or_else(|| io::Error::other(format!("agent {id} is not running; try `orkai recover`")))?;
+    let runtime = store.read_runtime(id)?.ok_or_else(|| {
+        let msg = if crate::i18n::current_language().is_pt() {
+            format!("agente {id} não está em execução; tente `orkai recover`")
+        } else {
+            format!("agent {id} is not running; try `orkai recover`")
+        };
+        io::Error::other(msg)
+    })?;
     let (conn, reader, _) = client::connect(&runtime)?;
     let (cols, rows) = terminal::size()?;
     execute!(io::stdout(), EnterAlternateScreen)?;
@@ -334,7 +404,11 @@ pub fn attach(store: &Store, id: AgentId) -> io::Result<()> {
     }
     let _ = conn.send(&ClientMsg::Detach);
     drop(guard);
-    println!("detached from #{} {}", record.id, record.name);
+    if crate::i18n::current_language().is_pt() {
+        println!("desconectado de #{} {}", record.id, record.name);
+    } else {
+        println!("detached from #{} {}", record.id, record.name);
+    }
     Ok(())
 }
 
@@ -356,7 +430,8 @@ fn set_pwa_enabled(store: &Store, enabled: bool) -> io::Result<()> {
 fn stop_pwa(home: &Home) -> io::Result<()> {
     pwa::bridge::stop(home)?;
     if !pwa::bridge::wait_until(home, PWA_STOP_WAIT, |info| info.is_none()) {
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "the orkai pwa did not stop in time"));
+        let msg = crate::i18n::t("the orkai pwa did not stop in time", "o orkai pwa não parou a tempo");
+        return Err(io::Error::new(io::ErrorKind::TimedOut, msg));
     }
     Ok(())
 }
@@ -368,13 +443,19 @@ pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -
         PwaAction::Stop => {
             set_pwa_enabled(store, false)?;
             stop_pwa(home)?;
-            println!("orkai pwa is off");
+            println!("{}", crate::i18n::t("orkai pwa is off", "orkai pwa está desligado"));
             return Ok(());
         }
         PwaAction::NewCode => {
             stop_pwa(home)?;
             pwa::bridge::forget_phones(home)?;
-            println!("the paired phones were forgotten; scan the new code");
+            println!(
+                "{}",
+                crate::i18n::t(
+                    "the paired phones were forgotten; scan the new code",
+                    "os celulares pareados foram esquecidos; escaneie o novo código"
+                )
+            );
         }
         PwaAction::Show => {}
     }
@@ -389,9 +470,21 @@ pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -
             shown = Some(info.phase);
             match info.phase {
                 Phase::Installing => {
-                    println!("downloading cloudflared (the official build from github.com/cloudflare)…")
+                    println!(
+                        "{}",
+                        crate::i18n::t(
+                            "downloading cloudflared (the official build from github.com/cloudflare)…",
+                            "baixando cloudflared (a compilação oficial de github.com/cloudflare)…"
+                        )
+                    );
                 }
-                Phase::Connecting => println!("opening the {} tunnel…", info.tunnel.label()),
+                Phase::Connecting => {
+                    if crate::i18n::current_language().is_pt() {
+                        println!("abrindo o túnel {}…", info.tunnel.label());
+                    } else {
+                        println!("opening the {} tunnel…", info.tunnel.label());
+                    }
+                }
                 Phase::Ready | Phase::Failed => {}
             }
         }
@@ -399,7 +492,9 @@ pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -
     });
     let info = pwa::bridge::status(home).filter(|_| ready);
     let Some(url) = info.as_ref().and_then(|info| info.ready_url()) else {
-        let error = info.and_then(|info| info.error).unwrap_or_else(|| "the tunnel did not open in time".into());
+        let error = info.and_then(|info| info.error).unwrap_or_else(|| {
+            crate::i18n::t("the tunnel did not open in time", "o túnel não abriu a tempo").into()
+        });
         return Err(io::Error::other(format!("orkai pwa: {error}")));
     };
     let link = pwa::bridge::pairing_link(url, &pwa::bridge::load_secret(home)?);
@@ -408,7 +503,12 @@ pub fn pwa(launcher: &Launcher, tunnel: Option<TunnelKind>, action: PwaAction) -
         println!("  {line}");
     }
     println!();
-    println!("scan it with the phone camera, or open: {link}");
-    println!("end-to-end encrypted over {} · `orkai pwa --stop` turns it off", tunnel.label());
+    if crate::i18n::current_language().is_pt() {
+        println!("escaneie com a câmera do celular, ou abra: {link}");
+        println!("criptografado de ponta a ponta via {} · `orkai pwa --stop` desliga", tunnel.label());
+    } else {
+        println!("scan it with the phone camera, or open: {link}");
+        println!("end-to-end encrypted over {} · `orkai pwa --stop` turns it off", tunnel.label());
+    }
     Ok(())
 }

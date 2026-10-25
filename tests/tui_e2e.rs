@@ -50,7 +50,7 @@ fn fixture() -> Fixture {
     let inner = Store::open(Home::at(dir.join("inner"))).unwrap();
     std::fs::create_dir_all(dir.join("work")).unwrap();
     let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q"]) } else { ("/bin/sh", vec![]) };
-    write_json_atomic(&inner.home().config_file(), &serde_json::json!({ "shell": shell, "shell_args": args })).unwrap();
+    write_json_atomic(&inner.home().config_file(), &serde_json::json!({ "shell": shell, "shell_args": args, "language": "en" })).unwrap();
     Fixture { dir, outer, inner }
 }
 
@@ -391,7 +391,7 @@ fn tui_rings_and_retitles_when_an_agent_finishes_out_of_sight() {
     let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q"]) } else { ("/bin/sh", vec![]) };
     write_json_atomic(
         &fx.inner.home().config_file(),
-        &serde_json::json!({ "shell": shell, "shell_args": args, "claude_command": fake, "notify_sound": false }),
+        &serde_json::json!({ "shell": shell, "shell_args": args, "claude_command": fake, "notify_sound": false, "language": "en" }),
     )
     .unwrap();
     let mut tui = start_tui(&fx);
@@ -409,6 +409,25 @@ fn tui_rings_and_retitles_when_an_agent_finishes_out_of_sight() {
     tui.wait_for("ctrl+] overview");
     tui.wait_for_title(orkai::tui::WINDOW_TITLE);
     tui.send(b"\x1d");
+    tui.send(b"\x03");
+    tui.wait_for_exit();
+}
+
+#[test]
+fn tui_runs_in_portuguese_mode() {
+    let fx = fixture();
+    let (shell, args) = if cfg!(windows) { ("cmd.exe", vec!["/q"]) } else { ("/bin/sh", vec![]) };
+    write_json_atomic(
+        &fx.inner.home().config_file(),
+        &serde_json::json!({ "shell": shell, "shell_args": args, "language": "pt-BR" }),
+    )
+    .unwrap();
+    let mut tui = start_tui(&fx);
+    tui.wait_for("quem claude");
+    tui.wait_for("escreva uma tarefa");
+    tui.wait_for("f1 ajuda");
+    tui.send(b"\x1b[Z");
+    tui.wait_for("quem terminal");
     tui.send(b"\x03");
     tui.wait_for_exit();
 }

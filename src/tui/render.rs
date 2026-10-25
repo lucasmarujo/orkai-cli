@@ -13,7 +13,7 @@ use crate::tui::complete::matching_commands;
 use crate::tui::format::{duration_short, pad, pad_left, skip_columns, split_columns, truncate, truncate_start, width};
 use crate::tui::sprite;
 use crate::tui::theme;
-use crate::usage::{self, Limits, Problem, Usage, Window};
+use crate::usage::{self, Limits, Usage, Window};
 use crate::util::now_ms;
 use crate::worktree::Changes;
 
@@ -142,7 +142,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
         };
         if app.show_help {
-            draw_help(screen, buf);
+            draw_help(app, screen, buf);
             None
         } else if let Some(Prompt::Confirm(confirm)) = app.prompt.as_ref()
             && confirm.is_popup()
@@ -184,12 +184,12 @@ fn draw_sidebar(app: &mut App, area: Rect, buf: &mut Buffer) {
         y += 1;
     }
     if y < area.bottom() {
-        put(buf, x + 2, y, "+ new session", fg(theme::LINK), right);
+        put(buf, x + 2, y, app.t("+ new session", "+ nova sessão"), fg(theme::LINK), right);
         app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::NewSession));
         y += 2;
     }
     if y < area.bottom() {
-        let (badge, color) = pwa_badge(&app.pwa);
+        let (badge, color) = pwa_badge(app, &app.pwa);
         let label = if app.pwa.enabled { theme::TEXT } else { theme::LINK };
         put(buf, x, y, PWA_LABEL, fg(label), right);
         let badge_x = right.saturating_sub(u16::try_from(width(&badge)).unwrap_or(0));
@@ -199,16 +199,23 @@ fn draw_sidebar(app: &mut App, area: Rect, buf: &mut Buffer) {
     }
     let lost = app.lost_in_session().len();
     if lost > 0 && y + 1 < area.bottom() {
-        put(buf, x, y, &format!("↻ {lost} interrupted"), fg(theme::RED).add_modifier(Modifier::BOLD), right);
-        put(buf, x, y + 1, "  ctrl+r to recover", fg(theme::MUTED), right);
+        put(
+            buf,
+            x,
+            y,
+            &format!("↻ {lost} {}", app.t("interrupted", "interrompido(s)")),
+            fg(theme::RED).add_modifier(Modifier::BOLD),
+            right,
+        );
+        put(buf, x, y + 1, app.t("  ctrl+r to recover", "  ctrl+r para recuperar"), fg(theme::MUTED), right);
         app.hits.push((Rect::new(area.x, y, area.width, 2), Hit::Recover));
     }
     if app.launching > 0 && area.height > 2 {
-        let text = format!("starting {}…", app.launching);
+        let text = format!("{} {}…", app.t("starting", "iniciando"), app.launching);
         put(buf, x, area.bottom() - 2, &text, fg(theme::YELLOW), right);
     }
     if area.height > 1 {
-        put(buf, x, area.bottom() - 1, "f1 help", fg(theme::FAINT), right);
+        put(buf, x, area.bottom() - 1, app.t("f1 help", "f1 ajuda"), fg(theme::FAINT), right);
     }
 }
 
@@ -227,7 +234,7 @@ fn draw_tabs(app: &mut App, area: Rect, buf: &mut Buffer) {
         fg(theme::MUTED)
     };
     let start = x;
-    x = put(buf, x, area.y, " ◆ overview ", style, right);
+    x = put(buf, x, area.y, app.t(" ◆ overview ", " ◆ visão geral "), style, right);
     app.hits.push((Rect::new(start, area.y, x - start, 1), Hit::Overview));
     let tabs = app.tabs.clone();
     for (index, id) in tabs.iter().enumerate() {
@@ -275,10 +282,10 @@ fn draw_overview(app: &mut App, area: Rect, buf: &mut Buffer) {
     let stats_x = area.x + sprite::WIDTH + 2;
     let right = area.right();
     let rows = [
-        (stats.agents, "agents", theme::PAPER, theme::INK),
-        (stats.working, "working", theme::YELLOW, theme::INK),
-        (stats.paused, "paused", theme::RED, theme::PAPER),
-        (stats.done, "done", theme::GREEN, theme::INK),
+        (stats.agents, app.t("agents", "agentes"), theme::PAPER, theme::INK),
+        (stats.working, app.t("working", "trabalhando"), theme::YELLOW, theme::INK),
+        (stats.paused, app.t("paused", "pausados"), theme::RED, theme::PAPER),
+        (stats.done, app.t("done", "concluídos"), theme::GREEN, theme::INK),
     ];
     let first = area.y + sprite_height.saturating_sub(4);
     let mut stats_right = stats_x;
@@ -306,7 +313,17 @@ fn usage_cells(used_percent: f64, cells: usize) -> usize {
     ((share * cells as f64).round() as usize).min(cells)
 }
 
-fn draw_usage_window(window: &Window, bar: usize, now: u64, x: u16, y: u16, right: u16, buf: &mut Buffer) -> u16 {
+#[allow(clippy::too_many_arguments)]
+fn draw_usage_window(
+    app: &App,
+    window: &Window,
+    bar: usize,
+    now: u64,
+    x: u16,
+    y: u16,
+    right: u16,
+    buf: &mut Buffer,
+) -> u16 {
     let color = theme::usage_color(window.used_percent);
     let filled = usage_cells(window.used_percent, bar);
     let mut x = put(buf, x, y, &"━".repeat(filled), fg(color), right);
@@ -315,9 +332,13 @@ fn draw_usage_window(window: &Window, bar: usize, now: u64, x: u16, y: u16, righ
     x = put(buf, x + 1, y, &percent, fg(color).add_modifier(Modifier::BOLD), right);
     if let Some(resets_at) = window.resets_at_ms {
         let text = if resets_at > now {
-            format!("resets {}", duration_short(resets_at - now))
+            if app.language.is_pt() {
+                format!("reinicia em {}", duration_short(resets_at - now))
+            } else {
+                format!("resets {}", duration_short(resets_at - now))
+            }
         } else {
-            "resets now".to_string()
+            app.t("resets now", "reinicia agora").to_string()
         };
         x = put(buf, x + 2, y, &text, fg(theme::DIM), right);
     }
@@ -392,10 +413,16 @@ fn draw_usage(app: &App, grid: &UsageGrid, x: u16, first: u16, area: Rect, buf: 
     if top > area.y {
         let updated = grid.kinds.iter().filter_map(|kind| app.usage.get(kind)?.updated_at_ms).max();
         let status = match updated {
-            Some(at) => format!(" · updated {} ago", duration_short(now.saturating_sub(at))),
-            None => " · checking…".to_string(),
+            Some(at) => {
+                if app.language.is_pt() {
+                    format!(" · atualizado há {}", duration_short(now.saturating_sub(at)))
+                } else {
+                    format!(" · updated {} ago", duration_short(now.saturating_sub(at)))
+                }
+            }
+            None => app.t(" · checking…", " · verificando…").to_string(),
         };
-        let after = put(buf, x, top - 1, "usage", fg(theme::MUTED), right);
+        let after = put(buf, x, top - 1, app.t("usage", "uso"), fg(theme::MUTED), right);
         put(buf, after, top - 1, &status, fg(theme::FAINT), right);
     }
     for (index, kind) in grid.kinds.iter().enumerate() {
@@ -415,7 +442,9 @@ fn draw_usage(app: &App, grid: &UsageGrid, x: u16, first: u16, area: Rect, buf: 
         put(buf, column_x, y, kind.label(), fg(theme::kind_color(*kind)), right);
         let window_x = column_x + grid.name_width;
         let Some(limits) = entry.and_then(|u| u.limits) else {
-            let text = entry.and_then(|u| u.problem).map_or("checking…", Problem::label);
+            let text = entry
+                .and_then(|u| u.problem)
+                .map_or(app.t("checking…", "verificando…"), |p| p.display_label(app.language));
             put(buf, window_x, y, text, fg(theme::FAINT), right);
             continue;
         };
@@ -425,12 +454,18 @@ fn draw_usage(app: &App, grid: &UsageGrid, x: u16, first: u16, area: Rect, buf: 
                 break;
             }
             let label = match usage_row {
-                UsageRow::Window(label, _) => label,
-                UsageRow::Credits(_) => USAGE_CREDITS_LABEL,
+                UsageRow::Window(label, _) => match *label {
+                    USAGE_WEEKLY_LABEL => app.t("week", "sem."),
+                    USAGE_MONTHLY_LABEL => app.t("month", "mês"),
+                    other => other,
+                },
+                UsageRow::Credits(_) => app.t(USAGE_CREDITS_LABEL, "saldo"),
             };
             let cx = put(buf, window_x, y, &pad(label, USAGE_WINDOW_WIDTH), fg(theme::DIM), right);
             let end = match usage_row {
-                UsageRow::Window(_, Some(window)) => draw_usage_window(window, grid.bar_width, now, cx, y, right, buf),
+                UsageRow::Window(_, Some(window)) => {
+                    draw_usage_window(app, window, grid.bar_width, now, cx, y, right, buf)
+                }
                 UsageRow::Window(_, None) => put(buf, cx, y, "n/a", fg(theme::FAINT), right),
                 UsageRow::Credits(credits) => {
                     let color = if *credits > 0.0 { theme::GREEN } else { theme::RED };
@@ -440,7 +475,7 @@ fn draw_usage(app: &App, grid: &UsageGrid, x: u16, first: u16, area: Rect, buf: 
             if row == 0
                 && let Some(problem) = entry.and_then(|u| u.problem)
             {
-                put(buf, end, y, &format!(" · {}", problem.label()), fg(theme::FAINT), right);
+                put(buf, end, y, &format!(" · {}", problem.display_label(app.language)), fg(theme::FAINT), right);
             }
         }
     }
@@ -474,13 +509,16 @@ fn time_columns(entry: &AgentEntry, now: u64) -> (Option<(String, Color)>, Optio
     (first, uptime)
 }
 
-fn activity(entry: &AgentEntry) -> (String, Color) {
+fn activity(app: &App, entry: &AgentEntry) -> (String, Color) {
     if entry.is_starting() {
-        return ("starting…".to_string(), theme::DIM);
+        return (app.t("starting…", "iniciando…").to_string(), theme::DIM);
     }
     match &entry.link {
-        Link::Lost => ("interrupted — ctrl+r to recover".to_string(), theme::RED),
-        Link::Exited(info) => (info.describe(), theme::FAINT),
+        Link::Lost => (
+            app.t("interrupted — ctrl+r to recover", "interrompido — ctrl+r para recuperar").to_string(),
+            theme::RED,
+        ),
+        Link::Exited(info) => (info.describe_lang(app.language), theme::FAINT),
         _ => {
             let status = entry.status.as_ref();
             let text = status
@@ -492,28 +530,38 @@ fn activity(entry: &AgentEntry) -> (String, Color) {
                 AgentState::Paused => theme::YELLOW,
                 _ => theme::MUTED,
             };
-            let text = if entry.state() == AgentState::Paused { format!("waiting for you · {text}") } else { text };
+            let text = if entry.state() == AgentState::Paused {
+                if app.language.is_pt() {
+                    format!("aguardando você · {text}")
+                } else {
+                    format!("waiting for you · {text}")
+                }
+            } else {
+                text
+            };
             (text, color)
         }
     }
 }
 
-fn changes_text(changes: Option<Changes>) -> Vec<(String, Color)> {
+fn changes_text(app: &App, changes: Option<Changes>) -> Vec<(String, Color)> {
     match changes {
         None => vec![("…".to_string(), theme::FAINT)],
-        Some(changes) if changes.is_empty() => vec![("clean".to_string(), theme::DIM)],
+        Some(changes) if changes.is_empty() => vec![(app.t("clean", "limpo").to_string(), theme::DIM)],
         Some(changes) => vec![
-            (format!("{} files", changes.files), theme::DIM),
+            (format!("{} {}", changes.files, app.t("files", "arquivos")), theme::DIM),
             (format!(" +{}", changes.insertions), theme::GREEN),
             (format!(" −{}", changes.deletions), theme::RED),
         ],
     }
 }
 
-fn changes_summary(changes: Option<Changes>) -> String {
+fn changes_summary(app: &App, changes: Option<Changes>) -> String {
     changes
         .filter(|c| !c.is_empty())
-        .map_or_else(String::new, |c| format!(" ({} files +{} −{})", c.files, c.insertions, c.deletions))
+        .map_or_else(String::new, |c| {
+            format!(" ({} {} +{} −{})", c.files, app.t("files", "arquivos"), c.insertions, c.deletions)
+        })
 }
 
 fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
@@ -530,15 +578,22 @@ fn draw_diff(app: &mut App, area: Rect, buf: &mut Buffer) {
     if let Some(worktree) = worktree {
         x = put(buf, x + 2, area.y, &format!("{BRANCH_GLYPH} {}", worktree.branch), fg(theme::LINK), right);
         let base: String = worktree.base.chars().take(BASE_SHORT).collect();
-        x = put(buf, x, area.y, &format!(" since {base}"), fg(theme::FAINT), right);
+        x = put(buf, x, area.y, &format!(" {}{base}", app.t("since ", "desde ")), fg(theme::FAINT), right);
     }
     x = put(buf, x, area.y, "  ", Style::default(), right);
-    for (text, color) in changes_text(entry.and_then(|e| e.changes)) {
+    for (text, color) in changes_text(app, entry.and_then(|e| e.changes)) {
         x = put(buf, x, area.y, &text, fg(color), right);
     }
     let body = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
     if diff.empty {
-        put(buf, body.x, body.y, &format!("{name} has not changed anything yet"), fg(theme::DIM), right);
+        put(
+            buf,
+            body.x,
+            body.y,
+            &format!("{name} {}", app.t("has not changed anything yet", "não alterou nada ainda")),
+            fg(theme::DIM),
+            right,
+        );
         return;
     }
     diff.view.render(body, buf);
@@ -548,9 +603,21 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
     let groups = app.groups();
     if groups.is_empty() {
         let lines = [
-            ("no agents in this session yet", theme::MUTED),
-            ("write a task below and press enter to start one", theme::DIM),
-            ("tab switches who runs it, ctrl+l changes where", theme::DIM),
+            (app.t("no agents in this session yet", "nenhum agente nesta sessão ainda"), theme::MUTED),
+            (
+                app.t(
+                    "write a task below and press enter to start one",
+                    "escreva uma tarefa abaixo e pressione enter para iniciar",
+                ),
+                theme::DIM,
+            ),
+            (
+                app.t(
+                    "tab switches who runs it, ctrl+l changes where",
+                    "tab alterna quem executa, ctrl+l altera onde",
+                ),
+                theme::DIM,
+            ),
         ];
         for (i, (text, color)) in lines.iter().enumerate() {
             let y = area.y + u16::try_from(i).unwrap_or(0);
@@ -633,12 +700,12 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                 x = put(buf, x, y, &pad(entry.kind().label(), KIND_WIDTH), fg(theme::kind_color(entry.kind())), right);
                 if entry.record.worktree.is_some() {
                     x = put(buf, x, y, &format!("{BRANCH_GLYPH} "), fg(theme::LINK), right);
-                    for (text, color) in changes_text(entry.changes) {
+                    for (text, color) in changes_text(app, entry.changes) {
                         x = put(buf, x, y, &text, fg(color), right);
                     }
                     x = put(buf, x, y, "  ", Style::default(), right);
                 }
-                let (text, color) = activity(entry);
+                let (text, color) = activity(app, entry);
                 let available = usize::from(right.saturating_sub(x));
                 put(buf, x, y, &truncate(&text, available), fg(color), right);
                 app.hits.push((Rect::new(area.x, y, area.width, 1), Hit::Agent(*id)));
@@ -658,7 +725,7 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
                     x = put(buf, x, y, &" ".repeat(TIME_WIDTH + 1), Style::default(), right);
                 }
                 x = put(buf, x, y, "  ", Style::default(), right);
-                x = put(buf, x, y, &pad(SUBAGENT_LABEL, KIND_WIDTH), fg(theme::FAINT), right);
+                x = put(buf, x, y, &pad(app.t(SUBAGENT_LABEL, "subagente"), KIND_WIDTH), fg(theme::FAINT), right);
                 let text = match (sub.description.is_empty(), sub.activity.is_empty()) {
                     (false, false) => format!("{} · {}", sub.description, sub.activity),
                     (false, true) => sub.description.clone(),
@@ -674,17 +741,30 @@ fn draw_agent_list(app: &mut App, area: Rect, buf: &mut Buffer) {
 
 fn prompt_prefix(app: &App) -> Option<(String, Color, String, usize)> {
     match app.prompt.as_ref()? {
-        Prompt::Where(input) => Some(("where › ".into(), theme::LINK, input.text(), width(&input.before_cursor()))),
+        Prompt::Where(input) => {
+            Some((format!("{} › ", app.t("where", "onde")), theme::LINK, input.text(), width(&input.before_cursor())))
+        }
         Prompt::Rename(id, input) => {
             let old = app.agents.get(id).map(|e| e.record.name.clone()).unwrap_or_default();
-            Some((format!("rename {old} › "), theme::ACCENT, input.text(), width(&input.before_cursor())))
+            Some((
+                format!("{} {old} › ", app.t("rename", "renomear")),
+                theme::ACCENT,
+                input.text(),
+                width(&input.before_cursor()),
+            ))
         }
-        Prompt::NewSession(input) => {
-            Some(("new session › ".into(), theme::LINK, input.text(), width(&input.before_cursor())))
-        }
-        Prompt::RenameSession(input) => {
-            Some(("rename session › ".into(), theme::LINK, input.text(), width(&input.before_cursor())))
-        }
+        Prompt::NewSession(input) => Some((
+            format!("{} › ", app.t("new session", "nova sessão")),
+            theme::LINK,
+            input.text(),
+            width(&input.before_cursor()),
+        )),
+        Prompt::RenameSession(input) => Some((
+            format!("{} › ", app.t("rename session", "renomear sessão")),
+            theme::LINK,
+            input.text(),
+            width(&input.before_cursor()),
+        )),
         Prompt::Confirm(_) => None,
     }
 }
@@ -692,20 +772,54 @@ fn prompt_prefix(app: &App) -> Option<(String, Color, String, usize)> {
 fn confirm_text(app: &App, confirm: &Confirm) -> String {
     let name = |id: &AgentId| app.agents.get(id).map(|e| e.record.name.clone()).unwrap_or_default();
     let text = match confirm {
-        Confirm::Kill(id) => format!("stop agent {}? the process will be terminated", name(id)),
-        Confirm::Remove(id) => format!("remove {} and its recorded output?", name(id)),
-        Confirm::Delete(id) => {
-            format!("delete {}? the process will be stopped and removed with its recorded output", name(id))
+        Confirm::Kill(id) => {
+            if app.language.is_pt() {
+                format!("parar agente {}? o processo será finalizado", name(id))
+            } else {
+                format!("stop agent {}? the process will be terminated", name(id))
+            }
         }
-        Confirm::DeleteSession(session) => format!("delete session {session}?  [y/N]"),
-        Confirm::Recover(ids) => format!("recover {} interrupted agent(s) in their folders?  [Y/n]", ids.len()),
+        Confirm::Remove(id) => {
+            if app.language.is_pt() {
+                format!("remover {} e sua saída gravada?", name(id))
+            } else {
+                format!("remove {} and its recorded output?", name(id))
+            }
+        }
+        Confirm::Delete(id) => {
+            if app.language.is_pt() {
+                format!("excluir {}? o processo será parado e removido com sua saída gravada", name(id))
+            } else {
+                format!("delete {}? the process will be stopped and removed with its recorded output", name(id))
+            }
+        }
+        Confirm::DeleteSession(session) => {
+            if app.language.is_pt() {
+                format!("excluir sessão {session}?  [s/N]")
+            } else {
+                format!("delete session {session}?  [y/N]")
+            }
+        }
+        Confirm::Recover(ids) => {
+            if app.language.is_pt() {
+                format!("recuperar {} agente(s) interrompido(s) em suas pastas?  [S/n]", ids.len())
+            } else {
+                format!("recover {} interrupted agent(s) in their folders?  [Y/n]", ids.len())
+            }
+        }
         Confirm::Merge(id) => {
             let entry = app.agents.get(id);
             let branch = entry.and_then(|e| e.record.worktree.as_ref()).map(|w| w.branch.clone()).unwrap_or_default();
-            let summary = changes_summary(entry.and_then(|e| e.changes));
-            format!(
-                "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first"
-            )
+            let summary = changes_summary(app, entry.and_then(|e| e.changes));
+            if app.language.is_pt() {
+                format!(
+                    "mesclar {branch}{summary} no branch atual do repositório? alterações pendentes são commitadas em {branch} primeiro"
+                )
+            } else {
+                format!(
+                    "merge {branch}{summary} into the repository's current branch? pending changes are committed on {branch} first"
+                )
+            }
         }
     };
     let worktree = match confirm {
@@ -713,7 +827,13 @@ fn confirm_text(app: &App, confirm: &Confirm) -> String {
         _ => None,
     };
     match worktree {
-        Some(worktree) => format!("{text} — its worktree and branch {} go too", worktree.branch),
+        Some(worktree) => {
+            if app.language.is_pt() {
+                format!("{text} — seu worktree e branch {} também serão removidos", worktree.branch)
+            } else {
+                format!("{text} — its worktree and branch {} go too", worktree.branch)
+            }
+        }
         None => text,
     }
 }
@@ -741,7 +861,7 @@ fn draw_path_suggestions(app: &App, x: u16, y: u16, right: u16, buf: &mut Buffer
     cx = put(buf, cx, y, " › ", fg(theme::FAINT), right);
     let suggestions = app.paths.suggestions();
     if suggestions.is_empty() {
-        put(buf, cx, y, "no folders here", fg(theme::FAINT), right);
+        put(buf, cx, y, app.t("no folders here", "nenhuma pasta aqui"), fg(theme::FAINT), right);
         return;
     }
     let labels: Vec<String> = suggestions.iter().map(|name| format!("{name}/")).collect();
@@ -835,7 +955,7 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
         let column = after + u16::try_from(before).unwrap_or(0);
         cursor = Some(Position::new(column.min(right.saturating_sub(1)), area.y));
     } else if app.task.is_empty() {
-        put(buf, x, area.y, "write a task", fg(theme::FAINT), right);
+        put(buf, x, area.y, app.t("write a task", "escreva uma tarefa"), fg(theme::FAINT), right);
         cursor = Some(Position::new(x, area.y));
     } else {
         cursor = Some(draw_task(app, x, area.y, rows, right, buf));
@@ -848,26 +968,32 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
     cx = put(buf, cx, y, &app.hostname, fg(theme::HOST), right);
     cx = put(buf, cx, y, "   ", Style::default(), right);
     let who_start = cx;
-    cx = put(buf, cx, y, "who ", fg(theme::DIM), right);
+    cx = put(buf, cx, y, &format!("{} ", app.t("who", "quem")), fg(theme::DIM), right);
     cx = put(buf, cx, y, app.who.label(), fg(theme::kind_color(app.who)).add_modifier(Modifier::BOLD), right);
     app.hits.push((Rect::new(who_start, y, cx - who_start, 1), Hit::Who));
     cx = put(buf, cx, y, "   ", Style::default(), right);
     let worktree_start = cx;
-    cx = put(buf, cx, y, "worktree ", fg(theme::DIM), right);
-    let (state, style) =
-        if app.worktree { ("on", fg(theme::GREEN).add_modifier(Modifier::BOLD)) } else { ("off", fg(theme::FAINT)) };
+    cx = put(buf, cx, y, &format!("{} ", app.t("worktree", "worktree")), fg(theme::DIM), right);
+    let (state, style) = if app.worktree {
+        (app.t("on", "ligado"), fg(theme::GREEN).add_modifier(Modifier::BOLD))
+    } else {
+        (app.t("off", "desligado"), fg(theme::FAINT))
+    };
     cx = put(buf, cx, y, state, style, right);
     app.hits.push((Rect::new(worktree_start, y, cx - worktree_start, 1), Hit::Worktree));
     cx = put(buf, cx, y, "   ", Style::default(), right);
     let bypass_start = cx;
-    cx = put(buf, cx, y, "bypass ", fg(theme::DIM), right);
-    let (state, style) =
-        if app.bypass { ("on", fg(theme::YELLOW).add_modifier(Modifier::BOLD)) } else { ("off", fg(theme::FAINT)) };
+    cx = put(buf, cx, y, &format!("{} ", app.t("bypass", "bypass")), fg(theme::DIM), right);
+    let (state, style) = if app.bypass {
+        (app.t("on", "ligado"), fg(theme::YELLOW).add_modifier(Modifier::BOLD))
+    } else {
+        (app.t("off", "desligado"), fg(theme::FAINT))
+    };
     cx = put(buf, cx, y, state, style, right);
     app.hits.push((Rect::new(bypass_start, y, cx - bypass_start, 1), Hit::Bypass));
     cx = put(buf, cx, y, "   ", Style::default(), right);
     let where_start = cx;
-    cx = put(buf, cx, y, "where ", fg(theme::DIM), right);
+    cx = put(buf, cx, y, &format!("{} ", app.t("where", "onde")), fg(theme::DIM), right);
     let where_text = app.display(&app.where_dir);
     cx = put(buf, cx, y, &where_text, fg(theme::LINK), right);
     app.hits.push((Rect::new(where_start, y, cx - where_start, 1), Hit::Where));
@@ -890,14 +1016,28 @@ fn draw_composer(app: &mut App, area: Rect, buf: &mut Buffer) -> Option<Position
             put(buf, cx, y, &skills.join("  "), fg(theme::kind_color(app.who)), right);
         }
     } else if app.diff.is_some() && app.prompt.is_none() && app.notice.is_none() {
-        put(buf, x, y, DIFF_HINT, fg(theme::FAINT), right);
+        put(buf, x, y, app.t(DIFF_HINT, "esc fechar · ↑↓ pgup pgdn rolar · /merge mescla"), fg(theme::FAINT), right);
     } else if app.prompt.is_none() && app.task.text().starts_with(SHELL_PREFIX) {
-        let text = format!("enter runs it in a new terminal · who stays {}", app.who.label());
+        let text = if app.language.is_pt() {
+            format!("enter executa em um novo terminal · quem permanece {}", app.who.label())
+        } else {
+            format!("enter runs it in a new terminal · who stays {}", app.who.label())
+        };
         put(buf, x, y, &text, fg(theme::TERMINAL), right);
     } else if let Some(notice) = app.notice.as_ref() {
         put(buf, x, y, &notice.text, fg(tone_color(notice.tone)), right);
     } else {
-        put(buf, x, y, HINT, fg(theme::FAINT), right);
+        put(
+            buf,
+            x,
+            y,
+            app.t(
+                HINT,
+                "↑↓ selecionar · enter abrir · tab agente · ^l pasta · ^n sessão · ^e renomear · del excluir · f1 ajuda",
+            ),
+            fg(theme::FAINT),
+            right,
+        );
     }
     cursor
 }
@@ -918,28 +1058,48 @@ const PWA_STEPS: [&str; 3] = [
 const PWA_PRIVACY: [&str; 2] =
     ["the tunnel only carries encrypted bytes; the key", "lives in this code, never on a server"];
 
-fn pwa_badge(pwa: &PwaPanel) -> (String, Color) {
+fn pwa_badge(app: &App, pwa: &PwaPanel) -> (String, Color) {
     match pwa.info.as_ref() {
-        _ if !pwa.enabled => ("off".to_string(), theme::FAINT),
-        Some(info) if info.phase == Phase::Failed => ("error".to_string(), theme::RED),
+        _ if !pwa.enabled => (app.t("off", "desligado").to_string(), theme::FAINT),
+        Some(info) if info.phase == Phase::Failed => (app.t("error", "erro").to_string(), theme::RED),
         Some(info) if info.phase == Phase::Ready && info.phones > 0 => (format!("● {}", info.phones), theme::GREEN),
-        Some(info) if info.phase == Phase::Ready => ("on".to_string(), theme::GREEN),
+        Some(info) if info.phase == Phase::Ready => (app.t("on", "ligado").to_string(), theme::GREEN),
         _ => ("…".to_string(), theme::YELLOW),
     }
 }
 
-fn pwa_waiting(pwa: &PwaPanel) -> (String, Color) {
+fn pwa_waiting(app: &App, pwa: &PwaPanel) -> (String, Color) {
     match pwa.info.as_ref() {
-        None => ("starting the orkai pwa…".to_string(), theme::YELLOW),
+        None => (app.t("starting the orkai pwa…", "iniciando o orkai pwa…").to_string(), theme::YELLOW),
         Some(info) => match info.phase {
-            Phase::Installing => {
-                ("downloading cloudflared, the official build from github.com/cloudflare…".to_string(), theme::YELLOW)
-            }
-            Phase::Connecting => (format!("opening the {} tunnel…", info.tunnel.label()), theme::YELLOW),
-            Phase::Failed => {
-                (format!("{} · retrying", info.error.as_deref().unwrap_or("the tunnel failed")), theme::RED)
-            }
-            Phase::Ready => ("the pairing code is not ready".to_string(), theme::MUTED),
+            Phase::Installing => (
+                app.t(
+                    "downloading cloudflared, the official build from github.com/cloudflare…",
+                    "baixando cloudflared, a compilação oficial de github.com/cloudflare…",
+                )
+                .to_string(),
+                theme::YELLOW,
+            ),
+            Phase::Connecting => (
+                if app.language.is_pt() {
+                    format!("abrindo o túnel {}…", info.tunnel.label())
+                } else {
+                    format!("opening the {} tunnel…", info.tunnel.label())
+                },
+                theme::YELLOW,
+            ),
+            Phase::Failed => (
+                format!(
+                    "{} · {}",
+                    info.error.as_deref().unwrap_or_else(|| app.t("the tunnel failed", "o túnel falhou")),
+                    app.t("retrying", "tentando novamente")
+                ),
+                theme::RED,
+            ),
+            Phase::Ready => (
+                app.t("the pairing code is not ready", "o código de pareamento não está pronto").to_string(),
+                theme::MUTED,
+            ),
         },
     }
 }
@@ -967,22 +1127,40 @@ fn copy_button() -> Style {
 
 fn pwa_details(app: &App, room: usize) -> Vec<(String, String, Style, Option<Hit>)> {
     let Some(info) = app.pwa.info.as_ref() else { return Vec::new() };
-    let mut rows = vec![("tunnel".to_string(), format!("{} · ready", info.tunnel.label()), fg(theme::MUTED), None)];
+    let mut rows = vec![(
+        app.t("tunnel", "túnel").to_string(),
+        format!("{} · {}", info.tunnel.label(), app.t("ready", "pronto")),
+        fg(theme::MUTED),
+        None,
+    )];
     if let Some(code) = app.pwa.code.as_ref() {
         for (index, line) in split_columns(&code.link, room).into_iter().enumerate() {
-            let label = if index == 0 { "link" } else { "" };
+            let label = if index == 0 { app.t("link", "link") } else { "" };
             rows.push((label.to_string(), line, fg(theme::LINK), None));
         }
-        rows.push((String::new(), PWA_COPY.to_string(), copy_button(), Some(Hit::CopyPwaLink)));
+        rows.push((
+            String::new(),
+            app.t(PWA_COPY, " copiar ").to_string(),
+            copy_button(),
+            Some(Hit::CopyPwaLink),
+        ));
     }
     let phones = match info.phones {
-        0 => ("no phone connected".to_string(), theme::DIM),
-        1 => ("1 connected".to_string(), theme::GREEN),
-        count => (format!("{count} connected"), theme::GREEN),
+        0 => (app.t("no phone connected", "nenhum celular conectado").to_string(), theme::DIM),
+        1 => (app.t("1 connected", "1 conectado").to_string(), theme::GREEN),
+        count => (format!("{count} {}", app.t("connected", "conectados")), theme::GREEN),
     };
-    rows.push(("phones".to_string(), phones.0, fg(phones.1), None));
-    for (index, line) in PWA_PRIVACY.iter().enumerate() {
-        let label = if index == 0 { "privacy" } else { "" };
+    rows.push((app.t("phones", "celulares").to_string(), phones.0, fg(phones.1), None));
+    let privacy_lines = if app.language.is_pt() {
+        &[
+            "o túnel transmite apenas bytes criptografados; a chave",
+            "reside neste código, nunca em um servidor",
+        ][..]
+    } else {
+        &PWA_PRIVACY[..]
+    };
+    for (index, line) in privacy_lines.iter().enumerate() {
+        let label = if index == 0 { app.t("privacy", "privacidade") } else { "" };
         rows.push((label.to_string(), (*line).to_string(), fg(theme::DIM), None));
     }
     rows
@@ -990,7 +1168,16 @@ fn pwa_details(app: &App, room: usize) -> Vec<(String, String, Style, Option<Hit
 
 fn draw_pwa_side(app: &mut App, x: u16, y: u16, right: u16, bottom: u16, buf: &mut Buffer) {
     let mut y = y;
-    for (index, step) in PWA_STEPS.iter().enumerate() {
+    let steps = if app.language.is_pt() {
+        &[
+            "aponte a câmera do celular para o código",
+            "seu orkai abre no navegador, já conectado",
+            "compartilhar › adicionar à tela de início deixa a um toque de distância",
+        ][..]
+    } else {
+        &PWA_STEPS[..]
+    };
+    for (index, step) in steps.iter().enumerate() {
         if y >= bottom {
             return;
         }
@@ -1021,25 +1208,45 @@ fn draw_pwa(app: &mut App, area: Rect, buf: &mut Buffer) {
     let bottom = area.bottom();
     let mut y = area.y;
     let after = put(buf, area.x, y, PWA_TITLE, fg(theme::TEXT).add_modifier(Modifier::BOLD), right);
-    let (badge, color) = pwa_badge(&app.pwa);
+    let (badge, color) = pwa_badge(app, &app.pwa);
     put(buf, after + 2, y, &badge, fg(color).add_modifier(Modifier::BOLD), right);
     y += 1;
     if y < bottom {
-        put(buf, area.x, y, PWA_TAGLINE, fg(theme::DIM), right);
+        put(
+            buf,
+            area.x,
+            y,
+            app.t(
+                PWA_TAGLINE,
+                "seu orkai no celular, de onde estiver · criptografado de ponta a ponta",
+            ),
+            fg(theme::DIM),
+            right,
+        );
     }
     y += 2;
     if y >= bottom {
         return;
     }
     if !app.pwa.enabled {
-        put(buf, area.x, y, "the orkai pwa is off", fg(theme::MUTED), right);
+        put(buf, area.x, y, app.t("the orkai pwa is off", "o orkai pwa está desligado"), fg(theme::MUTED), right);
         if y + 1 < bottom {
-            put(buf, area.x, y + 1, "press enter to turn it on and show the pairing code", fg(theme::DIM), right);
+            put(
+                buf,
+                area.x,
+                y + 1,
+                app.t(
+                    "press enter to turn it on and show the pairing code",
+                    "pressione enter para ligar e exibir o código de pareamento",
+                ),
+                fg(theme::DIM),
+                right,
+            );
         }
         return;
     }
     let Some(code) = app.pwa.code.as_ref() else {
-        let (text, color) = pwa_waiting(&app.pwa);
+        let (text, color) = pwa_waiting(app, &app.pwa);
         let spinner = theme::SPINNER[app.tick % theme::SPINNER.len()];
         let after = put(buf, area.x, y, spinner, fg(color), right);
         put(buf, after + 1, y, &text, fg(color), right);
@@ -1053,7 +1260,10 @@ fn draw_pwa(app: &mut App, area: Rect, buf: &mut Buffer) {
             buf,
             area.x,
             y,
-            "make the terminal bigger to show the code, or open on the phone:",
+            app.t(
+                "make the terminal bigger to show the code, or open on the phone:",
+                "aumente o terminal para exibir o código, ou abra no celular:",
+            ),
             fg(theme::YELLOW),
             right,
         );
@@ -1063,7 +1273,7 @@ fn draw_pwa(app: &mut App, area: Rect, buf: &mut Buffer) {
             put(buf, area.x, row, &line, fg(theme::LINK), right);
         }
         if button < bottom {
-            let end = put(buf, area.x, button, PWA_COPY, copy_button(), right);
+            let end = put(buf, area.x, button, app.t(PWA_COPY, " copiar "), copy_button(), right);
             app.hits.push((Rect::new(area.x, button, end.saturating_sub(area.x), 1), Hit::CopyPwaLink));
         }
         return;
@@ -1088,7 +1298,14 @@ fn draw_pwa_status(app: &App, area: Rect, buf: &mut Buffer) {
     if let Some(notice) = app.notice.as_ref() {
         put(buf, x, area.y, &notice.text, fg(tone_color(notice.tone)), right);
     }
-    let hint = if app.pwa.enabled { PWA_HINT_ON } else { PWA_HINT_OFF };
+    let hint = if app.pwa.enabled {
+        app.t(
+            PWA_HINT_ON,
+            "esc voltar · c copiar link · n novo código (esquece os celulares) · d desligar",
+        )
+    } else {
+        app.t(PWA_HINT_OFF, "enter liga · esc voltar")
+    };
     put(buf, x, area.bottom() - 1, hint, fg(theme::FAINT), right);
 }
 
@@ -1098,7 +1315,11 @@ fn draw_agent(app: &mut App, id: AgentId, area: Rect, buf: &mut Buffer) -> Optio
     match entry.term.as_ref() {
         Some(term) => term.render(area, buf),
         None => {
-            let message = if entry.is_dead() { "loading the last recorded screen…" } else { "connecting…" };
+            let message = if entry.is_dead() {
+                app.t("loading the last recorded screen…", "carregando a última tela gravada…")
+            } else {
+                app.t("connecting…", "conectando…")
+            };
             let y = area.y + area.height / 2;
             let x = area.x + area.width.saturating_sub(u16::try_from(width(message)).unwrap_or(0)) / 2;
             put(buf, x, y, message, fg(theme::DIM), area.right());
@@ -1116,14 +1337,22 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
     let y = area.y;
     let scrolled = entry.term.as_ref().is_some_and(|t| t.is_scrolled());
     let hint = if entry.is_dead() {
-        "enter restart · esc back · pgup/pgdn scroll"
+        app.t("enter restart · esc back · pgup/pgdn scroll", "enter reiniciar · esc voltar · pgup/pgdn rolar")
     } else if scrolled {
-        "scrollback · type to return · ctrl+] overview"
+        app.t("scrollback · type to return · ctrl+] overview", "histórico · digite para voltar · ctrl+] visão geral")
     } else {
-        "ctrl+] overview · shift+pgup scroll"
+        app.t("ctrl+] overview · shift+pgup scroll", "ctrl+] visão geral · shift+pgup rolar")
     };
     let others = app.attention(Some(id)).total();
-    let lead = if others > 0 { format!("‖ {others} need you · alt+n · ") } else { String::new() };
+    let lead = if others > 0 {
+        if app.language.is_pt() {
+            format!("‖ {others} precisam de você · alt+n · ")
+        } else {
+            format!("‖ {others} need you · alt+n · ")
+        }
+    } else {
+        String::new()
+    };
     let hint_width = u16::try_from(width(&lead) + width(hint)).unwrap_or(0);
     let hint_x = right.saturating_sub(hint_width + 1);
     let limit = if hint_x > area.x + 20 { hint_x.saturating_sub(2) } else { right };
@@ -1132,8 +1361,8 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
         put(buf, x, y, hint, fg(theme::FAINT), right);
     }
     let (state_text, state_color) = match &entry.link {
-        Link::Exited(info) => (info.describe(), theme::MUTED),
-        Link::Lost => ("interrupted".to_string(), theme::RED),
+        Link::Exited(info) => (info.describe_lang(app.language), theme::MUTED),
+        Link::Lost => (app.t("interrupted", "interrompido").to_string(), theme::RED),
         _ => {
             let state = entry.state();
             let color = match state {
@@ -1142,7 +1371,7 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
                 AgentState::Done => theme::GREEN,
                 _ => theme::MUTED,
             };
-            (state.label().to_string(), color)
+            (state.display_label(app.language).to_string(), color)
         }
     };
     let mut x = area.x + 1;
@@ -1166,10 +1395,10 @@ fn draw_agent_status(app: &App, id: AgentId, area: Rect, buf: &mut Buffer) {
 
 fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
     let (title, color) = match confirm {
-        Confirm::Delete(_) => (" delete agent ", theme::RED),
-        Confirm::Remove(_) => (" remove agent ", theme::RED),
-        Confirm::Merge(_) => (" merge worktree ", theme::GREEN),
-        _ => (" stop agent ", theme::YELLOW),
+        Confirm::Delete(_) => (app.t(" delete agent ", " excluir agente "), theme::RED),
+        Confirm::Remove(_) => (app.t(" remove agent ", " remover agente "), theme::RED),
+        Confirm::Merge(_) => (app.t(" merge worktree ", " mesclar worktree "), theme::GREEN),
+        _ => (app.t(" stop agent ", " parar agente "), theme::YELLOW),
     };
     let width = CONFIRM_WIDTH.min(screen.width.saturating_sub(4));
     let height = CONFIRM_HEIGHT.min(screen.height.saturating_sub(2));
@@ -1184,7 +1413,10 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
         Line::default(),
         Line::styled(confirm_text(app, confirm), fg(theme::TEXT).add_modifier(Modifier::BOLD)),
         Line::default(),
-        Line::styled(CONFIRM_HINT, fg(theme::DIM)),
+        Line::styled(
+            app.t(CONFIRM_HINT, "y / enter confirma  ·  qualquer outra tecla cancela"),
+            fg(theme::DIM),
+        ),
     ];
     Paragraph::new(lines)
         .alignment(Alignment::Center)
@@ -1200,36 +1432,11 @@ fn draw_confirm(app: &App, confirm: &Confirm, screen: Rect, buf: &mut Buffer) {
         .render(area, buf);
 }
 
-const HELP: &[(&str, &str)] = &[
-    ("type + enter", "start an agent with that task"),
-    ("shift+enter", "new line in the task (alt+enter also works)"),
-    ("ctrl+← · ctrl+→", "move the cursor by word in the task"),
-    ("click on the task", "put the cursor where you clicked"),
-    ("ctrl+↑ · ctrl+↓", "recall the tasks you sent in this session"),
-    ("tab / shift+tab", "who runs it: an installed agent or terminal"),
-    ("!command", "run a shell command in a new terminal"),
-    ("/where · ctrl+l", "folder for this session: type, tab enters or cycles"),
-    ("ctrl+t /worktree", "new agents in their own git worktree and branch"),
-    ("/bypass", "new agents skip every permission prompt"),
-    ("/diff · /merge", "see or merge the selected agent's worktree"),
-    ("ctrl+p · /pwa", "your orkai on the phone, from anywhere (/pwa off turns it off)"),
-    ("↑ ↓ / mouse", "select agent · click or enter opens it"),
-    ("alt+1..9", "jump to an open tab"),
-    ("alt+n", "open the next agent waiting for you (or finished)"),
-    ("ctrl+]", "leave an agent and return to the overview"),
-    ("shift+pgup/pgdn", "scroll an agent's history (or mouse wheel)"),
-    ("ctrl+e / f2", "rename selected agent"),
-    ("ctrl+x", "stop a running agent / remove a stopped one"),
-    ("delete", "stop and remove the selected agent (asks first)"),
-    ("ctrl+r", "recover interrupted agents of this session"),
-    ("ctrl+n · alt+↑↓", "new session · switch session"),
-    ("/", "commands: /cd /who /session /restart /recover …"),
-    ("ctrl+c / ctrl+q", "quit — agents keep running in background"),
-];
-
-fn draw_help(screen: Rect, buf: &mut Buffer) {
+fn draw_help(app: &App, screen: Rect, buf: &mut Buffer) {
+    let help = crate::i18n::help_items(app.language);
+    let title = crate::i18n::help_title(app.language);
     let width = 70.min(screen.width.saturating_sub(4));
-    let height = (u16::try_from(HELP.len()).unwrap_or(0) + 4).min(screen.height.saturating_sub(2));
+    let height = (u16::try_from(help.len()).unwrap_or(0) + 4).min(screen.height.saturating_sub(2));
     let area = Rect::new(
         screen.x + (screen.width.saturating_sub(width)) / 2,
         screen.y + (screen.height.saturating_sub(height)) / 2,
@@ -1237,7 +1444,7 @@ fn draw_help(screen: Rect, buf: &mut Buffer) {
         height,
     );
     Clear.render(area, buf);
-    let lines: Vec<Line> = HELP
+    let lines: Vec<Line> = help
         .iter()
         .map(|(key, text)| {
             Line::from(vec![
@@ -1252,7 +1459,7 @@ fn draw_help(screen: Rect, buf: &mut Buffer) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(fg(theme::RULE))
-                .title(" orkai · keys ")
+                .title(title)
                 .title_style(fg(theme::TEXT).add_modifier(Modifier::BOLD)),
         )
         .render(area, buf);

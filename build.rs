@@ -30,14 +30,27 @@ fn main() -> io::Result<()> {
     println!("cargo:rerun-if-changed={ICON}");
     println!("cargo:rerun-if-changed=Cargo.toml");
     let windows = env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "windows");
-    let msvc = env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|target_env| target_env == "msvc");
-    if !windows || !msvc {
+    if !windows {
         return Ok(());
     }
+    let msvc = env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|target_env| target_env == "msvc");
     let out = env::var_os("OUT_DIR").map(PathBuf::from).ok_or_else(|| io::Error::other("OUT_DIR is not set"))?;
     let res = out.join("orkai.res");
     fs::write(&res, resource_file(&fs::read(ICON)?)?)?;
-    println!("cargo:rustc-link-arg-bins={}", res.display());
+    if msvc {
+        println!("cargo:rustc-link-arg-bins={}", res.display());
+    } else {
+        let obj = out.join("orkai_res.o");
+        if std::process::Command::new("windres")
+            .args(["-J", "res", "-O", "coff"])
+            .arg(&res)
+            .arg(&obj)
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            println!("cargo:rustc-link-arg-bins={}", obj.display());
+        }
+    }
     Ok(())
 }
 

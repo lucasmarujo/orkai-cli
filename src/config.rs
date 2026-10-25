@@ -35,6 +35,7 @@ pub struct Config {
     pub notify_args: Vec<String>,
     pub pwa_tunnel: TunnelKind,
     pub pwa_port: u16,
+    pub language: Option<String>,
 }
 
 impl Default for Config {
@@ -64,6 +65,7 @@ impl Default for Config {
             notify_args: Vec::new(),
             pwa_tunnel: TunnelKind::default(),
             pwa_port: bridge::DEFAULT_PORT,
+            language: None,
         }
     }
 }
@@ -123,6 +125,12 @@ mod tests {
         let config: Config = serde_json::from_str(r#"{"pwa_tunnel":"tailscale","pwa_port":9100}"#).unwrap();
         assert_eq!(config.pwa_tunnel, TunnelKind::Tailscale);
         assert_eq!(config.pwa_port, 9100);
+    }
+
+    #[test]
+    fn language_can_be_configured() {
+        let config: Config = serde_json::from_str(r#"{"language":"pt-BR"}"#).unwrap();
+        assert_eq!(config.language.as_deref(), Some("pt-BR"));
     }
 
     #[test]

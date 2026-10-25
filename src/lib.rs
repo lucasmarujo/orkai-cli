@@ -5,6 +5,7 @@ pub mod config;
 pub mod fsutil;
 pub mod holder;
 pub mod hooks;
+pub mod i18n;
 pub mod launch;
 pub mod model;
 pub mod notify;

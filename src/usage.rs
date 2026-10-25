@@ -110,6 +110,18 @@ impl Problem {
             Problem::Unavailable => "unavailable",
         }
     }
+
+    pub fn display_label(self, lang: crate::i18n::Language) -> &'static str {
+        match lang {
+            crate::i18n::Language::En => self.label(),
+            crate::i18n::Language::PtBr => match self {
+                Problem::SignedOut => "não conectado",
+                Problem::Expired => "sessão expirada",
+                Problem::ApiKey => "chave api · sem limites de plano",
+                Problem::Unavailable => "indisponível",
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

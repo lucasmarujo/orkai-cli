@@ -67,7 +67,10 @@ pub fn is_detach_key(key: &KeyEvent) -> bool {
     }
     key.modifiers.contains(KeyModifiers::CONTROL)
         && !key.modifiers.contains(KeyModifiers::ALT)
-        && matches!(key.code, KeyCode::Char(']') | KeyCode::Char('5'))
+        && matches!(
+            key.code,
+            KeyCode::Char(']') | KeyCode::Char('5') | KeyCode::Char('ç') | KeyCode::Char('Ç')
+        )
 }
 
 pub fn is_next_waiting_key(key: &KeyEvent) -> bool {
@@ -405,7 +408,10 @@ mod tests {
     fn detach_key_matches_ctrl_bracket_variants() {
         assert!(is_detach_key(&key(KeyCode::Char(']'), KeyModifiers::CONTROL)));
         assert!(is_detach_key(&key(KeyCode::Char('5'), KeyModifiers::CONTROL)));
+        assert!(is_detach_key(&key(KeyCode::Char('ç'), KeyModifiers::CONTROL)));
+        assert!(is_detach_key(&key(KeyCode::Char('Ç'), KeyModifiers::CONTROL)));
         assert!(!is_detach_key(&key(KeyCode::Char(']'), KeyModifiers::NONE)));
+        assert!(!is_detach_key(&key(KeyCode::Char('ç'), KeyModifiers::NONE)));
         assert!(!is_detach_key(&key(KeyCode::Char(']'), KeyModifiers::CONTROL | KeyModifiers::ALT)));
     }
 
